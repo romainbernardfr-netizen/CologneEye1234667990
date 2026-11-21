@@ -62,7 +62,10 @@ def analyze_with_gemini(page_text: str) -> SlotCheckResult:
     if not GEMINI_API_KEY:
         raise ValueError("Missing GEMINI_API_KEY environment variable.")
 
-    client = genai.Client(api_key=GEMINI_API_KEY)
+    client = genai.Client(
+        api_key=GEMINI_API_KEY,
+        http_options=types.HttpOptions(timeout=20_000),  # 20-second timeout so it never hangs
+    )
     prompt = f"""
     Analyze the text from the Köln Triathlon Startplatzbörse webpage below.
     Determine if any starting slots (Mitteldistanz, Olympische Distanz, Sprintdistanz, etc.) 
@@ -117,13 +120,16 @@ def send_notifications(details: str) -> None:
 
     # 2. Telegram Bot
     if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
-        requests.post(
+        resp = requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
             json={"chat_id": TELEGRAM_CHAT_ID, "text": message_body},
             timeout=10,
         )
-        print("Sent notification via Telegram.")
+        print(f"Telegram response ({resp.status_code}): {resp.text}")
+        resp.raise_for_status()
         sent_any = True
+    else:
+        print(f"Telegram skipped -> TOKEN set: {bool(TELEGRAM_TOKEN)}, CHAT_ID set: {bool(TELEGRAM_CHAT_ID)}")
 
     # 3. Discord Webhook
     if DISCORD_WEBHOOK_URL:
@@ -163,7 +169,7 @@ def main() -> None:
     print("Page changed! Asking Gemini to verify...")
     result = analyze_with_gemini(page_text)
 
-    if True:
+    if True:  # <-- Remember to change back to `if result.slots_available:` after your test buzzes!
         print(f"SLOTS FOUND: {result.details}")
         send_notifications(result.details)
     else:
