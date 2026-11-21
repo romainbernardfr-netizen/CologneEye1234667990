@@ -1,1 +1,45 @@
+name: Köln Triathlon Slot Watcher
 
+on:
+  schedule:
+    # Runs every 5 minutes (offset by 2 minutes to avoid top-of-hour queue delays)
+    - cron: '2-59/5 * * * *'
+  # Enables manual testing via the "Run workflow" button in GitHub Actions
+  workflow_dispatch:
+
+jobs:
+  check-slots:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Restore previous page hash
+        uses: actions/cache@v4
+        with:
+          path: last_page_hash.txt
+          key: page-hash-${{ github.run_id }}
+          restore-keys: |
+            page-hash-
+
+      - name: Run slot checker
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          EMAIL_APP_PASSWORD: ${{ secrets.EMAIL_APP_PASSWORD }}
+          EMAIL_RECEIVER: ${{ secrets.EMAIL_RECEIVER }}
+        run: python check_triathlon.py
