@@ -7,6 +7,7 @@ import requests
 from bs4 import BeautifulSoup
 from google import genai
 from google.genai import types
+from playwright.sync_api import sync_playwright
 from pydantic import BaseModel, Field
 
 # --- CONFIGURATION (Loaded from GitHub Repository Secrets) ---
@@ -35,11 +36,16 @@ class SlotCheckResult(BaseModel):
 
 
 def get_clean_page_text(url: str) -> str:
-    headers = {"User-Agent": "Mozilla/5.0 (compatible; TriathlonSlotWatcher/1.0)"}
-    response = requests.get(url, headers=headers, timeout=15)
-    response.raise_for_status()
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(url, wait_until="networkidle", timeout=30000)
+        # Wait up to 6 seconds for the "Lade …" ticket widget to finish rendering
+        page.wait_for_timeout(6000)
+        html = page.content()
+        browser.close()
 
-    soup = BeautifulSoup(response.text, "html.parser")
+    soup = BeautifulSoup(html, "html.parser")
     for tag in soup(["script", "style", "nav", "footer"]):
         tag.decompose()
 
@@ -70,7 +76,8 @@ def analyze_with_gemini(page_text: str) -> SlotCheckResult:
     Analyze the text from the Köln Triathlon Startplatzbörse webpage below.
     Determine if any starting slots (Mitteldistanz, Olympische Distanz, Sprintdistanz, etc.) 
     are currently listed for transfer/sale under 'Folgende Startplätze werden aktuell angeboten'.
-    Ignore general instructions on how the exchange works.
+    Ignore general instructions on how the exchange works, and ignore empty-state messages 
+    such as 'Lade …' or 'Keine Startplätze'.
 
     Page text:
     {page_text[:15000]}
@@ -93,7 +100,8 @@ def analyze_with_gemini(page_text: str) -> SlotCheckResult:
         marker = "Folgende Startplätze werden aktuell angeboten:"
         if marker in page_text:
             listing_area = page_text.split(marker, 1)[1].strip()
-            if listing_area and not listing_area.startswith("Medien."):
+            empty_phrases = ("Lade", "Medien.", "Keine ", "Aktuell keine", "Derzeit keine")
+            if listing_area and not listing_area.startswith(empty_phrases):
                 return SlotCheckResult(slots_available=True, details=listing_area[:500])
         return SlotCheckResult(slots_available=False, details="Fallback check: no slots listed.")
 
@@ -128,8 +136,6 @@ def send_notifications(details: str) -> None:
         print(f"Telegram response ({resp.status_code}): {resp.text}")
         resp.raise_for_status()
         sent_any = True
-    else:
-        print(f"Telegram skipped -> TOKEN set: {bool(TELEGRAM_TOKEN)}, CHAT_ID set: {bool(TELEGRAM_CHAT_ID)}")
 
     # 3. Discord Webhook
     if DISCORD_WEBHOOK_URL:
@@ -162,15 +168,14 @@ def send_notifications(details: str) -> None:
 def main() -> None:
     page_text = get_clean_page_text(URL)
 
-    # Temporarily disabled for testing so it always runs:
-    # if not has_page_changed(page_text):
-    #     print("No change detected on page.")
-    #     return
+    if not has_page_changed(page_text):
+        print("No change detected on page.")
+        return
 
     print("Page changed! Asking Gemini to verify...")
     result = analyze_with_gemini(page_text)
 
-    if True:  # Temporarily True for testing — change back to `if result.slots_available:` after your test buzzes!
+    if result.slots_available:
         print(f"SLOTS FOUND: {result.details}")
         send_notifications(result.details)
     else:
