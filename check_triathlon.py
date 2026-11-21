@@ -64,7 +64,7 @@ def analyze_with_gemini(page_text: str) -> SlotCheckResult:
 
     client = genai.Client(
         api_key=GEMINI_API_KEY,
-        http_options=types.HttpOptions(timeout=20_000),  # 20-second timeout so it never hangs
+        http_options=types.HttpOptions(timeout=20_000),
     )
     prompt = f"""
     Analyze the text from the Köln Triathlon Startplatzbörse webpage below.
@@ -162,14 +162,15 @@ def send_notifications(details: str) -> None:
 def main() -> None:
     page_text = get_clean_page_text(URL)
 
-    if not has_page_changed(page_text):
-        print("No change detected on page.")
-        return
+    # Temporarily disabled for testing so it always runs:
+    # if not has_page_changed(page_text):
+    #     print("No change detected on page.")
+    #     return
 
     print("Page changed! Asking Gemini to verify...")
     result = analyze_with_gemini(page_text)
 
-    if True:  # <-- Remember to change back to `if result.slots_available:` after your test buzzes!
+    if True:  # Temporarily True for testing — change back to `if result.slots_available:` after your test buzzes!
         print(f"SLOTS FOUND: {result.details}")
         send_notifications(result.details)
     else:
