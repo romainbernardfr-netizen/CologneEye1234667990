@@ -76,8 +76,9 @@ def analyze_with_gemini(page_text: str) -> SlotCheckResult:
     Analyze the text from the Köln Triathlon Startplatzbörse webpage below.
     Determine if any starting slots (Mitteldistanz, Olympische Distanz, Sprintdistanz, etc.) 
     are currently listed for transfer/sale under 'Folgende Startplätze werden aktuell angeboten'.
-    Ignore general instructions on how the exchange works, and ignore empty-state messages 
-    such as 'Lade …' or 'Keine Startplätze'.
+    Ignore general instructions, placeholder text ('Lade …'), and empty table headers 
+    ('A_Startplatzbörse|B_Startplatzbörse_DE Startnummer Vorname Link Einstellungsdatum') 
+    if there are no actual slot rows listed after 'Einstellungsdatum'.
 
     Page text:
     {page_text[:15000]}
@@ -100,6 +101,11 @@ def analyze_with_gemini(page_text: str) -> SlotCheckResult:
         marker = "Folgende Startplätze werden aktuell angeboten:"
         if marker in page_text:
             listing_area = page_text.split(marker, 1)[1].strip()
+            # Strip the empty table header if present
+            header_end = "Einstellungsdatum"
+            if header_end in listing_area:
+                listing_area = listing_area.split(header_end, 1)[1].strip()
+
             empty_phrases = ("Lade", "Medien.", "Keine ", "Aktuell keine", "Derzeit keine")
             if listing_area and not listing_area.startswith(empty_phrases):
                 return SlotCheckResult(slots_available=True, details=listing_area[:500])
