@@ -163,7 +163,7 @@ def main() -> None:
     print("Page changed! Asking Gemini to verify...")
     result = analyze_with_gemini(page_text)
 
-    if result.slots_available:
+    if True:
         print(f"SLOTS FOUND: {result.details}")
         send_notifications(result.details)
     else:
