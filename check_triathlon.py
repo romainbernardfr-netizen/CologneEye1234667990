@@ -73,23 +73,33 @@ def analyze_with_gemini(page_text: str) -> SlotCheckResult:
     {page_text[:15000]}
     """
 
-    response = client.models.generate_content(
-        model="gemini-3.8-flash",
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            response_schema=SlotCheckResult,
-            temperature=0.0,
-        ),
-    )
-    return SlotCheckResult.model_validate_json(response.text)
+    try:
+        response = client.models.generate_content(
+            model="gemini-3.8-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=SlotCheckResult,
+                thinking_config=types.ThinkingConfig(thinking_level="LOW"),
+            ),
+        )
+        return SlotCheckResult.model_validate_json(response.text)
+
+    except Exception as e:
+        print(f"Gemini temporarily unavailable ({e}). Falling back to direct text check...")
+        marker = "Folgende Startplätze werden aktuell angeboten:"
+        if marker in page_text:
+            listing_area = page_text.split(marker, 1)[1].strip()
+            if listing_area and not listing_area.startswith("Medien."):
+                return SlotCheckResult(slots_available=True, details=listing_area[:500])
+        return SlotCheckResult(slots_available=False, details="Fallback check: no slots listed.")
 
 
 def send_notifications(details: str) -> None:
     sent_any = False
     message_body = f"🚨 Köln Triathlon Slot Available!\n\n{details}\n\nLink: {URL}"
 
-    # 1. ntfy.sh (works in any desktop browser at ntfy.sh/app as well as mobile)
+    # 1. ntfy.sh
     if NTFY_TOPIC:
         requests.post(
             f"https://ntfy.sh/{NTFY_TOPIC}",
